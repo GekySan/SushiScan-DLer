@@ -6,13 +6,16 @@ import html
 from concurrent.futures import ThreadPoolExecutor
 from colorama import Fore, Style
 
-'''
-pip install requests
-pip install colorama
-'''
-
 regex_url = '^https://sushiscan.net/catalogue/[a-z0-9-]+/$'
 root_folder = "DL SushiScan"
+
+"""
+Functions
+
+parse_lr       : ✓
+make_request   : ✖
+download_image : ✖
+"""
 
 def parse_lr(text, left, right, recursive, unescape=True):
     """
@@ -36,24 +39,24 @@ def parse_lr(text, left, right, recursive, unescape=True):
 
     return matches if recursive else matches[0] if matches else None
 
-def make_request(url, cookie=None):
+def make_request(url, cookie_cf_clearance=None, user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"):
     headers = {
         'Accept': '*/*',
         'Accept-Language': 'fr-FR,fr;q=0.9',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
+        'User-Agent': user_agent
     }
-    if cookie:
-        headers['Cookie'] = f'cf_clearance={cookie}'
+    if cookie_cf_clearance:
+        headers['Cookie'] = f'cf_clearance={cookie_cf_clearance}'
     return requests.get(url, headers=headers)
 
-def download_image(url, folder_path, cookie=None):
+def download_image(url, folder_path, cookie_cf_clearance=None, user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"):
     headers = {
         'Accept': '*/*',
         'Accept-Language': 'fr-FR,fr;q=0.9',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
+        'User-Agent': user_agent
     }
-    if cookie:
-        headers['Cookie'] = f'cf_clearance={cookie}'
+    if cookie_cf_clearance:
+        headers['Cookie'] = f'cf_clearance={cookie_cf_clearance}'
     response = requests.get(url, headers=headers)
     if response.status_code == 200:
         with open(os.path.join(folder_path, url.split('/')[-1]), 'wb') as file:
@@ -61,6 +64,16 @@ def download_image(url, folder_path, cookie=None):
             print(Fore.GREEN + f"Image downloaded : {url}" + Style.RESET_ALL)
     else:
         print(Fore.RED + f"Image could not be downloaded (status code {response.status_code}): {url}" + Style.RESET_ALL)
+
+"""
+Main
+
+Execution of main tasks: URL input, request handling,
+image downloading, and error management.
+"""
+
+cookie_cf_clearance_value = None
+user_agent = None
 
 url = input("Please enter the URL of catalogue: ")
 if not re.match(regex_url, url):
@@ -70,20 +83,22 @@ if not re.match(regex_url, url):
 response = make_request(url)
 while response.status_code == 403:
     print(Fore.YELLOW + "Access denied with status code 403. Please enter 'cf_clearance' cookie value." + Style.RESET_ALL)
-    cookie_value = input("Cookie value for 'cf_clearance': ")
-    response = make_request(url, cookie_value)
+    cookie_cf_clearance_value = input("Cookie value for 'cf_clearance': ")
+    user_agent = input("Please enter your User-Agent: ")
+    response = make_request(url, cookie_cf_clearance_value, user_agent)
+
 
 if response.status_code == 200:
     html_content = response.text
     title = html.unescape(parse_lr(html_content, '<h1 class="entry-title" itemprop="name">', '</h1>', False))
-    volumes = parse_lr(html_content, '<span class="chapternum">', '</span>', True)
+    volumes = parse_lr(html_content, '<span class="chapternum"> ', '</span>', True)
     links = parse_lr(html_content, '<a href="', '">\n<span class="chapternum">', True)
     volumes.reverse()
     links.reverse()
     links_of_all_volumes = []
 
     for link in links:
-        response = make_request(link, cookie_value)
+        response = make_request(link, cookie_cf_clearance_value, user_agent)
         if response.status_code == 200:
             json_string = parse_lr(response.text, 'ts_reader.run(', ');</script>', False)
             try:
@@ -104,7 +119,7 @@ if response.status_code == 200:
             volume_folder = os.path.join(root_folder, title, volume)
             os.makedirs(volume_folder, exist_ok=True)
             for image_url in images:
-                executor.submit(download_image, image_url, volume_folder, cookie_value)
+                executor.submit(download_image, image_url, volume_folder, cookie_cf_clearance_value)
     
     print(Fore.GREEN + "Download completed." + Style.RESET_ALL)
 
