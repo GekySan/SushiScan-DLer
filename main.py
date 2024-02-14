@@ -119,7 +119,7 @@ if response.status_code == 200:
             volume_folder = os.path.join(root_folder, title, volume)
             os.makedirs(volume_folder, exist_ok=True)
             for image_url in images:
-                executor.submit(download_image, image_url, volume_folder, cookie_cf_clearance_value)
+                executor.submit(download_image, image_url, volume_folder, cookie_cf_clearance_value, user_agent)
     
     print(Fore.GREEN + "Download completed." + Style.RESET_ALL)
 
