@@ -5,6 +5,7 @@ import os
 import html
 from concurrent.futures import ThreadPoolExecutor
 from colorama import Fore, Style
+from math import ceil, log10
 
 regex_url = '^https://sushiscan.net/catalogue/[a-z0-9-]+/$'
 root_folder = "DL SushiScan"
@@ -49,7 +50,7 @@ def make_request(url, cookie_cf_clearance=None, user_agent="Mozilla/5.0 (Windows
         headers['Cookie'] = f'cf_clearance={cookie_cf_clearance}'
     return requests.get(url, headers=headers)
 
-def download_image(url, folder_path, cookie_cf_clearance=None, user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"):
+def download_image(url, folder_path, cookie_cf_clearance, user_agent, i, number_len):
     headers = {
         'Accept': '*/*',
         'Accept-Language': 'fr-FR,fr;q=0.9',
@@ -59,7 +60,7 @@ def download_image(url, folder_path, cookie_cf_clearance=None, user_agent="Mozil
         headers['Cookie'] = f'cf_clearance={cookie_cf_clearance}'
     response = requests.get(url, headers=headers)
     if response.status_code == 200:
-        with open(os.path.join(folder_path, url.split('/')[-1]), 'wb') as file:
+        with open(os.path.join(folder_path, str(i).zfill(number_len)) + "." + url.split('/')[-1].split(".")[-1], 'wb') as file:
             file.write(response.content)
             print(Fore.GREEN + f"Image downloaded : {url}" + Style.RESET_ALL)
     else:
@@ -118,8 +119,9 @@ if response.status_code == 200:
         for volume, images in zip(volumes, links_of_all_volumes):
             volume_folder = os.path.join(root_folder, title, volume)
             os.makedirs(volume_folder, exist_ok=True)
-            for image_url in images:
-                executor.submit(download_image, image_url, volume_folder, cookie_cf_clearance_value, user_agent)
+            number_len = ceil(log10(len(images)))
+            for i, image_url in enumerate(images):
+                executor.submit(download_image, image_url, volume_folder, cookie_cf_clearance_value, user_agent, i, number_len)
     
     print(Fore.GREEN + "Download completed." + Style.RESET_ALL)
 
