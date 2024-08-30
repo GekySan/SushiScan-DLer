@@ -49,8 +49,8 @@ def make_request(url, cookie_cf_clearance=None, user_agent="Mozilla/5.0 (Windows
     if cookie_cf_clearance:
         headers['Cookie'] = f'cf_clearance={cookie_cf_clearance}'
         
-    with httpx.Client() as client:
-        return client.get(url, headers=headers)
+    response = requests.get(url, headers=headers, impersonate="chrome")
+    return response
 
 def download_image(url, folder_path, cookie_cf_clearance, user_agent, i, number_len):
     headers = {
@@ -61,8 +61,7 @@ def download_image(url, folder_path, cookie_cf_clearance, user_agent, i, number_
     if cookie_cf_clearance:
         headers['Cookie'] = f'cf_clearance={cookie_cf_clearance}'
 
-    with httpx.Client() as client:
-        response = client.get(url, headers=headers)
+    response = requests.get(url, headers=headers, impersonate="chrome")
 
     if response.status_code == 200:
         with open(os.path.join(folder_path, str(i).zfill(number_len)) + "." + url.split('/')[-1].split(".")[-1], 'wb') as file:
