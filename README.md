@@ -6,7 +6,7 @@ Simple Python script for bulk download scans from sushiscan.net.
 
 Commencez par installer ces packages :
 ```bash
-pip install pillow httpx colorama
+pip install pillow curl_cffi colorama
 ```
 
 ### Téléchargement
