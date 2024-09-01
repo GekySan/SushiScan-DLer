@@ -1,4 +1,4 @@
-import httpx
+from curl_cffi import requests
 import re
 import json
 import os
