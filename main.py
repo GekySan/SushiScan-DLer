@@ -1,22 +1,18 @@
-from curl_cffi import requests
-import re
+# -*- coding: utf-8 -*-
+
+import argparse
+import html
 import json
 import os
-import html
+import re
 from concurrent.futures import ThreadPoolExecutor
-from colorama import Fore, Style
 from math import ceil, log10
 
-regex_url = '^https://sushiscan.net/catalogue/[a-z0-9-]+/$'
-root_folder = "DL SushiScan"
+from curl_cffi import requests
+from rich import print
 
-"""
-Functions
-
-parse_lr       : ✓
-make_request   : ✖
-download_image : ✖
-"""
+REGEX_URL = '^https://sushiscan.net/catalogue/[a-z0-9-]+/$'
+ROOT_FOLDER = "DL SushiScan"
 
 def parse_lr(text, left, right, recursive, unescape=True):
     """
@@ -40,94 +36,119 @@ def parse_lr(text, left, right, recursive, unescape=True):
 
     return matches if recursive else matches[0] if matches else None
 
-def make_request(url, cookie_cf_clearance=None, user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"):
+def make_request(url, cookie_cf_clearance, user_agent):
     headers = {
         'Accept': '*/*',
         'Accept-Language': 'fr-FR,fr;q=0.9',
+        'Cookie': f'cf_clearance={cookie_cf_clearance}',
         'User-Agent': user_agent
     }
-    if cookie_cf_clearance:
-        headers['Cookie'] = f'cf_clearance={cookie_cf_clearance}'
         
     response = requests.get(url, headers=headers, impersonate="chrome")
     return response
 
-def download_image(url, folder_path, cookie_cf_clearance, user_agent, i, number_len):
+def download_image(url, folder_path, cookie_cf_clearance, user_agent, i, number_len, max_retries=3):
     headers = {
         'Accept': '*/*',
         'Accept-Language': 'fr-FR,fr;q=0.9',
+        'Cookie': f'cf_clearance={cookie_cf_clearance}',
         'User-Agent': user_agent
     }
-    if cookie_cf_clearance:
-        headers['Cookie'] = f'cf_clearance={cookie_cf_clearance}'
 
-    response = requests.get(url, headers=headers, impersonate="chrome")
-
-    if response.status_code == 200:
-        with open(os.path.join(folder_path, str(i).zfill(number_len)) + "." + url.split('/')[-1].split(".")[-1], 'wb') as file:
-            file.write(response.content)
-            print(Fore.GREEN + f"Image downloaded : {url}" + Style.RESET_ALL)
-    else:
-        print(Fore.RED + f"Image could not be downloaded (status code {response.status_code}): {url}" + Style.RESET_ALL)
-
-"""
-Main
-
-Execution of main tasks: URL input, request handling,
-image downloading, and error management.
-"""
-
-cookie_cf_clearance_value = None
-user_agent = None
-
-url = input("Please enter the URL of catalogue: ")
-if not re.match(regex_url, url):
-    print(Fore.RED + "Invalid URL format." + Style.RESET_ALL)
-    exit()
-
-response = make_request(url)
-while response.status_code == 403:
-    print(Fore.YELLOW + "Access denied with status code 403. Please enter 'cf_clearance' cookie value." + Style.RESET_ALL)
-    cookie_cf_clearance_value = input("Cookie value for 'cf_clearance': ")
-    user_agent = input("Please enter your User-Agent: ")
-    response = make_request(url, cookie_cf_clearance_value, user_agent)
-
-
-if response.status_code == 200:
-    html_content = response.text
-    title = html.unescape(parse_lr(html_content, '<h1 class="entry-title" itemprop="name">', '</h1>', False))
-    volumes = parse_lr(html_content, '<span class="chapternum"> ', '</span>', True)
-    links = parse_lr(html_content, '<a href="', '">\n<span class="chapternum">', True)
-    volumes.reverse()
-    links.reverse()
-    links_of_all_volumes = []
-
-    for link in links:
-        response = make_request(link, cookie_cf_clearance_value, user_agent)
+    retries = 0
+    while retries <= max_retries:
+        response = requests.get(url, headers=headers, impersonate="chrome")
+        
         if response.status_code == 200:
-            json_string = parse_lr(response.text, 'ts_reader.run(', ');</script>', False)
-            try:
-                data = json.loads(json_string)
-                images = data['sources'][0]['images']
-                links_of_all_volumes.append(images)
-            except json.JSONDecodeError as e:
-                print(Fore.RED + f"JSON parsing error for link {link}: {e}" + Style.RESET_ALL)
-                links_of_all_volumes.append([])
+            with open(os.path.join(folder_path, str(i).zfill(number_len)) + "." + url.split('/')[-1].split(".")[-1], 'wb') as file:
+                file.write(response.content)
+                print(f"[bold green]Image téléchargée : {url}[/bold green]")
+            return
         else:
-            print(Fore.RED + f"Request error for link {link}: {response.status_code}" + Style.RESET_ALL)
-            links_of_all_volumes.append([])
+            retries += 1
+            print(f"[bold yellow]Échec du téléchargement de l'image : {url}. Tentative {retries}/{max_retries}...[/bold yellow]")
 
-    links_of_all_volumes = [[url.replace("http://", "https://") for url in sublist] for sublist in links_of_all_volumes]
+    print(f"[bold red]Impossible de télécharger l'image après {max_retries} tentatives : {url}[/bold red]")
 
-    with ThreadPoolExecutor(max_workers=20) as executor:
-        for volume, images in zip(volumes, links_of_all_volumes):
-            volume_folder = os.path.join(root_folder, title, volume)
-            os.makedirs(volume_folder, exist_ok=True)
-            number_len = ceil(log10(len(images)))
-            for i, image_url in enumerate(images):
-                executor.submit(download_image, image_url, volume_folder, cookie_cf_clearance_value, user_agent, i, number_len)
-    
-    print(Fore.GREEN + "Download completed." + Style.RESET_ALL)
 
-else:
-    print(Fore.RED + f"Request failed with status code: {response.status_code}" + Style.RESET_ALL)
+def main():
+    parser = argparse.ArgumentParser(description="Téléchargement d'un catalogue SushiScan.")
+    parser.add_argument("-u", "--url", required=True, help="URL du catalogue SushiScan à télécharger.")
+    parser.add_argument("-c", "--cookie", required=True, help="Valeur du cookie 'cf_clearance'.")
+    parser.add_argument("-ua", "--user-agent", required=True, help="L'User-Agent pour les requêtes.")
+    parser.add_argument("-t", "--threads", type=int, default=10, help="Nombre de threads à utiliser (par défaut : 10).")
+
+    args = parser.parse_args()
+
+    if not re.match(REGEX_URL, args.url):
+        print("[bold red]Format d'URL invalide.[/bold red]")
+        exit()
+
+    cookie_cf_clearance_value = args.cookie
+    user_agent = args.user_agent
+    threads = args.threads if isinstance(args.threads, int) and args.threads > 0 else 10
+
+    response = make_request(args.url, cookie_cf_clearance_value, user_agent)
+
+    if response.status_code == 403:
+        print("[bold red]Accès refusé.[/bold red]\n[bold yellow]Vérifiez vos cookies ou l'User-Agent.[/bold yellow]")
+        exit()
+
+    elif response.status_code == 200:
+        html_content = response.text
+        title = html.unescape(parse_lr(html_content, '<h1 class="entry-title" itemprop="name">', '</h1>', False))
+        volumes = parse_lr(html_content, '<span class="chapternum"> ', '</span>', True)
+        links = parse_lr(html_content, '<a href="', '">\n<span class="chapternum">', True)
+        volumes.reverse()
+        links.reverse()
+        links_of_all_volumes = []
+
+        for link in links:
+            response = make_request(link, cookie_cf_clearance_value, user_agent)
+            if response.status_code == 200:
+                json_string = parse_lr(response.text, 'ts_reader.run(', ');</script>', False)
+                try:
+                    data = json.loads(json_string)
+                    images = data['sources'][0]['images']
+                    links_of_all_volumes.append(images)
+                except json.JSONDecodeError as e:
+                    print(f"[bold red]Erreur de parsing JSON pour le lien {link} : {e}[/bold red]")
+                    links_of_all_volumes.append([])
+            else:
+                print(f"[bold red]Erreur de requête pour le lien {link} : {response.status_code}[/bold red]")
+                links_of_all_volumes.append([])
+
+        links_of_all_volumes = [[url.replace("http://", "https://") for url in sublist] for sublist in links_of_all_volumes]
+
+        pairs = list(zip(volumes, links_of_all_volumes))
+
+        user_input = input(f"Entrez la plage de volumes à télécharger (par exemple, pour tout télécharger : 1-{len(pairs)}) : ").strip()
+
+        try:
+            start, end = map(int, user_input.split('-'))
+            if start < 1 or end > len(pairs) or start > end:
+                raise ValueError("Plage invalide.")
+        except ValueError:
+            print(f"[bold red]Erreur : Veuillez entrer une plage valide au format DEBUT-FIN, et dans les limites disponibles, ici {len(pairs)}.[/bold red]")
+            exit()
+
+        selected_pairs = pairs[start-1:end]
+
+        print(f"[bold green]Nombre de volumes à télécharger : {len(selected_pairs)}[/bold green]")
+        print(f"[bold yellow]Téléchargement des volumes de {start} à {end}...[/bold yellow]")
+
+        with ThreadPoolExecutor(max_workers=threads) as executor:
+            for volume, images in selected_pairs:
+                volume_folder = os.path.join(ROOT_FOLDER, title, volume)
+                os.makedirs(volume_folder, exist_ok=True)
+                number_len = ceil(log10(len(images)))
+                for i, image_url in enumerate(images):
+                    executor.submit(download_image, image_url, volume_folder, cookie_cf_clearance_value, user_agent, i, number_len)
+
+        print("[bold green]Téléchargement terminé.[/bold green]")
+
+    else:
+        print(f"[bold red]La requête a échoué avec le code de statut : {response.status_code}[/bold red]")
+
+if __name__ == "__main__":
+    main()
